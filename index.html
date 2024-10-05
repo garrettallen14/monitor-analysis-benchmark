@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor Analysis Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #2c3e50;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .checkbox-container {
+            border: 1px solid #ddd;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+        }
+        .checkbox-item label {
+            margin-left: 5px;
+            word-break: break-word;
+        }
+        #resultsTable {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        #resultsTable th, #resultsTable td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 150px;
+        }
+        #resultsTable th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+        .chart-container {
+            height: 600px;
+            width: 100%;
+            margin-bottom: 30px;
+        }
+        #analysisType, #itemCount {
+            margin-bottom: 20px;
+            padding: 5px;
+        }
+        .control-group {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Focused Monitor Analysis Dashboard</h1>
+
+    <div class="section">
+        <h2>Model Selection</h2>
+        <div class="checkbox-container">
+            <div id="modelCheckboxes" class="checkbox-group"></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Question Selection</h2>
+        <div class="checkbox-container">
+            <div id="questionCheckboxes" class="checkbox-group"></div>
+        </div>
+    </div>
+
+    <div class="section control-group">
+        <div>
+            <h2>Analysis Type</h2>
+            <select id="analysisType">
+                <option value="brands">Brand Names</option>
+                <option value="monitors">Monitor Names</option>
+            </select>
+        </div>
+        <div>
+            <h2>Number of Items to Display</h2>
+            <input type="number" id="itemCount" min="1" max="50" value="20">
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Results</h2>
+        <div class="chart-container">
+            <canvas id="resultsChart"></canvas>
+        </div>
+        <div style="overflow-x: auto;">
+            <table id="resultsTable"></table>
+        </div>
+    </div>
+
+    <script>
+        let allData = {};
+        let models = [];
+        let questions = [];
+        let chart = null;
+
+        // Load and process data
+        fetch('monitor_comparison_results.json')
+            .then(response => response.json())
+            .then(data => {
+                allData = data;
+                models = Object.keys(data);
+                questions = data[models[0]].map(item => item.question);
+                initializeUI();
+                updateResults();
+            })
+            .catch(error => console.error('Error:', error));
+
+        function initializeUI() {
+            // Model checkboxes
+            const modelCheckboxes = document.getElementById('modelCheckboxes');
+            modelCheckboxes.innerHTML = `
+                <div class="checkbox-item">
+                    <input type="checkbox" id="allModels" checked>
+                    <label for="allModels">All Models</label>
+                </div>
+                ${models.map(model => `
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="${model}" checked>
+                        <label for="${model}">${model}</label>
+                    </div>
+                `).join('')}
+            `;
+
+            // Question checkboxes
+            const questionCheckboxes = document.getElementById('questionCheckboxes');
+            questionCheckboxes.innerHTML = `
+                <div class="checkbox-item">
+                    <input type="checkbox" id="allQuestions" checked>
+                    <label for="allQuestions">All Questions</label>
+                </div>
+                ${questions.map((question, index) => `
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="question${index}" checked>
+                        <label for="question${index}">${question}</label>
+                    </div>
+                `).join('')}
+            `;
+
+            // Event listeners
+            document.getElementById('allModels').addEventListener('change', toggleAllCheckboxes);
+            document.getElementById('allQuestions').addEventListener('change', toggleAllCheckboxes);
+            document.querySelectorAll('#modelCheckboxes input, #questionCheckboxes input, #analysisType, #itemCount')
+                .forEach(elem => elem.addEventListener('change', updateResults));
+        }
+
+        function toggleAllCheckboxes(event) {
+            const checkboxes = event.target.closest('.checkbox-group').querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                if (checkbox !== event.target) {
+                    checkbox.checked = event.target.checked;
+                }
+            });
+            updateResults();
+        }
+
+        function updateResults() {
+            const selectedModels = getSelectedItems('modelCheckboxes');
+            const selectedQuestions = getSelectedItems('questionCheckboxes');
+            const analysisType = document.getElementById('analysisType').value;
+            const itemCount = parseInt(document.getElementById('itemCount').value);
+
+            const data = processData(selectedModels, selectedQuestions, analysisType, itemCount);
+            updateChart(data, analysisType);
+            updateTable(data, analysisType);
+        }
+
+        function getSelectedItems(containerId) {
+            const container = document.getElementById(containerId);
+            return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(checkbox => checkbox.id)
+                .filter(id => id !== 'allModels' && id !== 'allQuestions');
+        }
+
+        function normalizeMonitorName(name) {
+            name = name.toLowerCase().replace(/[()-]/g, '').trim();
+            
+            // ASUS VG278Q variations
+            if (name.includes('asus vg278q')) return 'asus vg278q';
+            
+            // Dell UltraSharp U2720Q variations
+            if (name.includes('dell') && name.includes('2720q')) return 'dell ultrasharp u2720q';
+            
+            // BenQ PD2700U variations
+            if (name.includes('benq pd27')) return 'benq pd2700u';
+            
+            // LG 27UK850-W variations
+            if (name.includes('lg 27uk850')) return 'lg 27uk850w';
+            
+            // Acer Predator XB273K variations
+            if (name.includes('acer predator xb273k')) return 'acer predator xb273k';
+            
+            // EIZO/Eizo ColorEdge CG319X variations
+            if (name.includes('eizo') && name.includes('cg319x')) return 'eizo coloredge cg319x';
+            
+            // ViewSonic XG240R variations
+            if (name.includes('viewsonic xg24')) return 'viewsonic xg240r';
+            
+            // Dell Alienware AW3423DW variations
+            if (name.includes('dell alienware aw3423dw')) return 'dell alienware aw3423dw';
+            
+            // LG UltraFine 5K variations
+            if (name.includes('lg ultrafine 5k')) return 'lg ultrafine 5k';
+            
+            // ASUS ProArt PA32UCX variations
+            if (name.includes('asus proart pa32uc')) return 'asus proart pa32ucx';
+
+            return name;
+        }
+
+        function getBestDisplayName(names) {
+            return names.reduce((best, current) => {
+                if (current.length > best.length) return current;
+                if (current.length === best.length && current < best) return current;
+                return best;
+            });
+        }
+
+        function processData(selectedModels, selectedQuestions, analysisType, itemCount) {
+            const results = {};
+            const displayNames = {};
+
+            selectedModels.forEach(model => {
+                allData[model].forEach((item, index) => {
+                    if (selectedQuestions.includes(`question${index}`)) {
+                        const items = analysisType === 'brands' ? item.brands : item.monitor_names;
+                        items.forEach(item => {
+                            const normalizedItem = analysisType === 'brands' ? item : normalizeMonitorName(item);
+                            if (!results[normalizedItem]) {
+                                results[normalizedItem] = { total: 0 };
+                                selectedModels.forEach(m => results[normalizedItem][m] = 0);
+                                displayNames[normalizedItem] = item;
+                            } else {
+                                displayNames[normalizedItem] = getBestDisplayName([displayNames[normalizedItem], item]);
+                            }
+                            results[normalizedItem].total++;
+                            results[normalizedItem][model]++;
+                        });
+                    }
+                });
+            });
+
+            return Object.entries(results)
+                .sort((a, b) => b[1].total - a[1].total)
+                .slice(0, itemCount)
+                .map(([key, value]) => [displayNames[key], value]);
+        }
+
+        function updateChart(data, analysisType) {
+            const ctx = document.getElementById('resultsChart').getContext('2d');
+            
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(item => item[0]),
+                    datasets: [{
+                        label: `${analysisType === 'brands' ? 'Brand' : 'Monitor'} Frequency`,
+                        data: data.map(item => item[1].total),
+                        backgroundColor: 'rgba(0, 0, 139, 0.6)'  // Dark blue color
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                autoSkip: false,
+                                callback: function(value) {
+                                    const label = this.getLabelForValue(value);
+                                    return label.length > 20 ? label.substr(0, 17) + '...' : label;
+                                }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Frequency'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTable(data, analysisType) {
+            const table = document.getElementById('resultsTable');
+            const selectedModels = getSelectedItems('modelCheckboxes');
+
+            let html = `
+                <tr>
+                    <th>${analysisType === 'brands' ? 'Brand' : 'Monitor'}</th>
+                    <th>Total</th>
+                    ${selectedModels.map(model => `<th>${model}</th>`).join('')}
+                </tr>
+            `;
+
+            data.forEach(([item, counts]) => {
+                html += `
+                    <tr>
+                        <td title="${item}">${item}</td>
+                        <td>${counts.total}</td>
+                        ${selectedModels.map(model => `<td>${counts[model] || 0}</td>`).join('')}
+                    </tr>
+                `;
+            });
+
+            table.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

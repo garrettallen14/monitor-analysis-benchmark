@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor Analysis Dashboard</title>
+    <title>Monitor Recommendation Benchmark Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
     <style>
         body {
@@ -71,11 +71,25 @@
             gap: 20px;
             align-items: center;
         }
+        .description {
+            margin-bottom: 0px;
+            padding: 0px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
-    <h1>Focused Monitor Analysis Dashboard</h1>
-
+    <h1>Monitor Recommendation Benchmark Dashboard</h1>
+    <p class="description">
+        The Monitor Recommendation Benchmark is a set of 50 questions which query the model to provide a set of product recommendations.
+    </p>
+    <p class="description">
+        This dashboard visualizes the frequency of Monitor Names or Monitor Brands recommended across various LLM responses.
+    </p>
+    <p class="description">
+        Use the checkboxes to select specific models or subsets of questions to focus on.
+    </p>
     <div class="section">
         <h2>Model Selection</h2>
         <div class="checkbox-container">
@@ -94,8 +108,8 @@
         <div>
             <h2>Analysis Type</h2>
             <select id="analysisType">
-                <option value="brands">Brand Names</option>
                 <option value="monitors">Monitor Names</option>
+                <option value="brands">Brand Names</option>
             </select>
         </div>
         <div>
